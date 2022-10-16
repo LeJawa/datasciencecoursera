@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+.httr-oauth
+keys/
+databases/
+specdata/
+github_oath.R

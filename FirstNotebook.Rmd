@@ -1,0 +1,43 @@
+---
+title: "FirstNotebook"
+output: html_document
+date: "2022-09-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE}
+m <- matrix(nrow = 2, ncol = 3)
+
+```
+
+
+```{r echo=FALSE}
+x <- factor(c("yes", "yes", "no", "yes", "no"), levels = c("yes", "no"))
+x
+table(x)
+typeof(x[1])
+typeof(x[[1]])
+typeof(x[1]) == typeof(x)
+
+x <- list(1:6)
+
+typeof(x[[1]])
+typeof(x[1]) == typeof(x[[1]])
+
+x = 1:6
+
+
+x[x>3]
+
+```
+```{r}
+cube <- function(x, n) {
+        x^3
+}
+
+
+cube(3)
+```
