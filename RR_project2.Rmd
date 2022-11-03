@@ -15,6 +15,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Analysis on severe weather events in the USA
 
+## Data Processing
+
+We are going to use the tidyverse library which is a collection of useful libraries like, dplyr, tibble, ggplot2 and readr, among others.
 ```{r libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
 ```
@@ -33,16 +36,94 @@ setwd(dataDir)
 if(!file.exists(dataFile)){
     download.file(dataURL, dataFile)
 }
-data <- read_csv(dataFile)
+data <- read_csv(dataFile, col_types = cols_only(
+  EVTYPE = col_character(),
+  FATALITIES = col_double(),
+  INJURIES = col_double(),
+  PROPDMG = col_double(),
+  CROPDMG = col_double()
+))
 setwd("..")
 ```
 
-## Including Plots
+```{r}
+data$EVTYPE <- sapply(data$EVTYPE, str_to_lower)
+```
+
+## Explore the data
+
+```{r, exploration, warning=FALSE}
+summary <- data %>% group_by(EVTYPE) %>% summarise(FATALITIES=sum(FATALITIES), INJURIES=sum(INJURIES), PROPDMG=sum(PROPDMG), CROPDMG=sum(CROPDMG))
+
+fatalities <- summary$FATALITIES
+injuries <- summary$INJURIES
+propdmg <- summary$PROPDMG
+cropdmg <- summary$CROPDMG
+
+
+```
+```{r}
+quantile(fatalities, probs = seq(0.85, 1, .01))
+```
+```{r}
+unique(data[data$FATALITIES>0,]$EVTYPE)
+```
+
+Astronomical Low Tide Z
+Avalanche Z
+Blizzard Z
+Coastal Flood Z
+Cold/Wind Chill Z
+Debris Flow C
+Dense Fog Z
+Dense Smoke Z
+Drought Z
+Dust Devil C
+Dust Storm Z
+Excessive Heat Z
+Extreme Cold/Wind Chill Z
+Flash Flood C
+Flood C
+Frost/Freeze Z
+Funnel Cloud C
+Freezing Fog Z
+Hail C
+Heat Z
+Heavy Rain C
+Heavy Snow Z
+High Surf Z
+High Wind Z
+Hurricane (Typhoon) Z
+Ice Storm Z
+Lake-Effect Snow Z
+Lakeshore Flood Z
+Lightning C
+Marine Hail M
+Marine High Wind M
+Marine Strong Wind M
+Marine Thunderstorm Wind M
+Rip Current Z
+Seiche Z
+Sleet Z
+Storm Surge/Tide Z
+Strong Wind Z
+Thunderstorm Wind C
+Tornado C
+Tropical Depression Z
+Tropical Storm Z
+Tsunami Z
+Volcanic Ash Z
+Waterspout M
+Wildfire Z
+Winter Storm Z
+Winter Weather Z
+
+## Results
 
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
-plot(pressure)
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
