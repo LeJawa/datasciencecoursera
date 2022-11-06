@@ -7,3 +7,4 @@ keys/
 databases/
 specdata/
 github_oath.R
+*_cache/

@@ -3,8 +3,8 @@ title: "Analysis on severe weather events in the USA"
 author: "Luis Escobar Sawa"
 date: "27/10/2022"
 output:
-  pdf_document: default
-  html_document: default
+  html_document:
+  pdf_document:
 subtitle: 'Reproducible Research: Peer-graded Assignment 2'
 company: 'John Hopkins University'
 ---
@@ -13,110 +13,344 @@ company: 'John Hopkins University'
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Analysis on severe weather events in the USA
+## Introduction
+
+The goal of this study will be to try to address the following questions:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+We will use  the storm database provided by the U.S. National Oceanic and Atmospheric Administration's (NOAA). This database reports estimates of any fatalities, injuries, and property damage caused by major storms and weather events.
+
 
 ## Data Processing
+
+### Extracting the data
 
 We are going to use the tidyverse library which is a collection of useful libraries like, dplyr, tibble, ggplot2 and readr, among others.
 ```{r libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
 ```
 
+First we download the database if not already present in the repository.
 
-```{r download_dataset, warning=FALSE, cache=TRUE}
+```{r download_dataset, warning=FALSE}
 dataDir <- "database/"
-dataFile <- "NOAA_stormdatabase.csv.bz2"
+dataFile <- paste0(dataDir, "NOAA_stormdatabase.csv.bz2")
 dataURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 
 if(!dir.exists(dataDir)){
     dir.create(dataDir)
 }
-setwd(dataDir)
 
 if(!file.exists(dataFile)){
     download.file(dataURL, dataFile)
 }
+```
+
+We read the first observation to get the information on the columns present in the dataset.
+
+```{r preread_dataset, cache=TRUE}
+data <- read_csv(dataFile, n_max = 1, show_col_types = FALSE)
+spec(data)
+```
+
+For this study, we will only keep the following columns:
+
+- BGN_DATE: The date of the start of the observation. While not completely relevant for this study, it will prove useful in some decisions.
+- EVTYPE: The type of the event observed. It is the main variable that we will be looking at.
+- FATALITIES: The number of fatalities caused by each event and is, of course, a key variable to investigate impact on population health.
+- INJURIES: The number of injuries caused by each event. This is the second variable we will use with regard to population health.
+- PROPDMG: The amount of property damage caused by the event in USD.
+- PROPDMGEXP: The magnitude of the property damage in the previous column.
+- CROPDMG: The amount of damage to crops caused by the event in USD.
+- CROPDMGEXP: The magnitude of the damage to crops in the previous column.
+
+```{r read_dataset, cache=TRUE}
 data <- read_csv(dataFile, col_types = cols_only(
+  BGN_DATE = col_date("%m/%d/%Y 0:00:00"),
   EVTYPE = col_character(),
   FATALITIES = col_double(),
   INJURIES = col_double(),
   PROPDMG = col_double(),
-  CROPDMG = col_double()
-))
-setwd("..")
+  PROPDMGEXP = col_character(),
+  CROPDMG = col_double(),
+  CROPDMGEXP = col_character()))
+```
+
+Since we are only interested in events that caused population harm or property damage, we select only the events where all four columns (FATALITIES, INJURIES, PROPDMG and  CROPDMG) are not equal to zero.
+
+```{r subsetting_dataset, cache=TRUE}
+data <- subset(data, FATALITIES > 0 | INJURIES > 0 | PROPDMG > 0 | CROPDMG > 0)
+```
+
+
+### Tidying the data
+
+The first task is to clean the EVTYPE variable. Currently it contains `r n_distinct(unique(data$EVTYPE))` different events.
+```{r EVTYPE_summary}
+n_distinct(unique(data$EVTYPE))
+```
+:::::: {.columns}
+
+The NOAA has defined 48 different event types:
+
+::: {.column width="25%"}
+
+1. Astronomical Low Tide
+1. Avalanche
+1. Blizzard
+1. Coastal Flood
+1. Cold/Wind Chill
+1. Debris Flow
+1. Dense Fog
+1. Dense Smoke
+1. Drought
+1. Dust Devil
+1. Dust Storm
+1. Excessive Heat
+
+:::
+
+::: {.column width="25%"}
+
+13. Extreme Cold/Wind Chill
+1. Flash Flood
+1. Flood
+1. Frost/Freeze
+1. Funnel Cloud
+1. Freezing Fog
+1. Hail
+1. Heat
+1. Heavy Rain
+1. Heavy Snow
+1. High Surf
+1. High Wind
+
+:::
+
+::: {.column width="25%"}
+
+
+25. Hurricane (Typhoon)
+1. Ice Storm
+1. Lake-Effect Snow
+1. Lakeshore Flood
+1. Lightning
+1. Marine Hail
+1. Marine High Wind
+1. Marine Strong Wind
+1. Marine Thunderstorm Wind
+1. Rip Current
+1. Seiche
+1. Sleet
+
+
+:::
+
+::: {.column width="25%"}
+
+
+37. Storm Surge/Tide
+1. Strong Wind
+1. Thunderstorm Wind
+1. Tornado
+1. Tropical Depression
+1. Tropical Storm
+1. Tsunami
+1. Volcanic Ash
+1. Waterspout
+1. Wildfire
+1. Winter Storm
+1. Winter Weather
+
+:::
+
+::::::
+
+The following code tries to gather the different event types under the event types
+defined by the NOAA. The variable *evtypes* will contain the original event types as well as an associated string.
+This string will contain the name of one or several NOAA event types, which will be used for the analysis.
+If no event type could be ascertained, the string will contain *"other"*.
+
+```{r grouping_evtype, cache=TRUE}
+
+NOAA_evtypes <- c("Astronomical Low Tide", "Avalanche", "Blizzard", "Coastal Flood", "Cold", "Wind Chill", "Debris Flow", "Dense Fog", "Dense Smoke", "Drought", "Dust Devil", "Dust Storm", "Excessive Heat", "Extreme Cold", "Wind Chill", "Flash Flood", "Flood", "Frost", "Freeze", "Funnel Cloud", "Freezing Fog", "Hail", "Heat", "Heavy Rain", "Heavy Snow", "High Surf", "High Wind", "Hurricane", "Typhoon", "Ice Storm", "Lake-Effect Snow", "Lakeshore Flood", "Lightning", "Marine Hail", "Marine High Wind", "Marine Strong Wind", "Marine Thunderstorm Wind", "Rip Current", "Seiche", "Sleet", "Storm Surge", "Storm Tide", "Strong Wind", "Thunderstorm Wind", "Tornado", "Tropical Depression", "Tropical Storm", "Tsunami", "Volcanic Ash", "Waterspout", "Wildfire", "Winter Storm", "Winter Weather", "Other")
+
+noaa_evtypes <- tolower(NOAA_evtypes)
+noaa_patterns <- paste0("(", paste(noaa_evtypes, collapse = "|"), ")")
+
+evtypes <-  setNames(as_tibble(unique(data$EVTYPE)), c("EVTYPE")) %>% 
+            mutate(replace=tolower(EVTYPE))  %>% 
+            mutate(replace=gsub("tstm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("torndao", "tornado", replace))  %>% 
+            mutate(replace=gsub("warm", "heat", replace))  %>% 
+            mutate(replace=gsub("astronomical high tide", "coastal flood", replace))  %>% 
+            mutate(replace=gsub("avalance", "avalanche", replace))  %>% 
+            mutate(replace=gsub("blowing dust", "dust storm", replace))  %>% 
+            mutate(replace=gsub("fire", "wildfire", replace))  %>% 
+            mutate(replace=gsub("storm surge", "storm tide", replace))  %>% 
+            mutate(replace=gsub("coastal surge", "coastal flood", replace))  %>% 
+            mutate(replace=gsub("dam break", "flood", replace))  %>% 
+            mutate(replace=gsub("downburst", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("mircoburst", "microburst", replace))  %>% 
+            mutate(replace=gsub("microburst", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("cstl", "coastal", replace))  %>% 
+            mutate(replace=gsub("rainfall", "heavy rain", replace))  %>% 
+            mutate(replace=gsub("excessive snow", "heavy snow", replace))  %>% 
+            mutate(replace=gsub("windchill", "wind chill", replace))  %>% 
+            mutate(replace=gsub("falling", "heavy", replace))  %>% 
+            mutate(replace=gsub("land", "debris flow", replace))  %>% 
+            mutate(replace=gsub("thunderstorm wi$", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("flash", "flash flood", replace))  %>% 
+            mutate(replace=gsub("fog", "dense fog", replace))  %>% 
+            mutate(replace=gsub("freezing drizzle", "winter weather", replace))  %>% 
+            mutate(replace=gsub("freezing rain", "winter weather", replace))  %>% 
+            mutate(replace=gsub("glaze", "winter weather", replace))  %>% 
+            mutate(replace=gsub("gusty wind", "heavy wind", replace))  %>% 
+            mutate(replace=gsub("hvy", "heavy", replace))  %>% 
+            mutate(replace=gsub("hazardous", "high", replace))  %>% 
+            mutate(replace=gsub("precipitation", "rain", replace))  %>% 
+            mutate(replace=gsub("ice($|/|[[:blank:]][^s].+([[:blank:]]|$))", "winter weather ", replace))  %>% 
+            mutate(replace=gsub("hyperthermia", "heat", replace))  %>% 
+            mutate(replace=gsub("hypothermia", "cold", replace))  %>% 
+            mutate(replace=gsub("lake effect", "lake-effect", replace))  %>% 
+            mutate(replace=gsub("icy roads", "winter weather", replace))  %>% 
+            mutate(replace=gsub("lake flood", "lakeshore flood", replace))  %>% 
+            mutate(replace=gsub("light snow", "winter weather", replace))  %>% 
+            mutate(replace=gsub("lighting", "lightning", replace))  %>% 
+            mutate(replace=gsub("thundeerstorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thunderstrom", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thunerstorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("tunderstorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thundertorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thuderstorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thunderestorm", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("thunderstormw", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("heavy wind", "strong wind", replace))  %>% 
+            mutate(replace=gsub("mudslide", "debris flow", replace))  %>% 
+            mutate(replace=gsub("mud slide", "debris flow", replace))  %>% 
+            mutate(replace=gsub("rock slide", "debris flow", replace))  %>% 
+            mutate(replace=gsub("wintry mix", "winter weather", replace))  %>% 
+            mutate(replace=gsub("ligntning", "lightning", replace))  %>% 
+            mutate(replace=gsub("thunderstorms", "thunderstorm", replace))  %>% 
+            mutate(replace=gsub("  ", " ", replace))  %>% 
+            mutate(replace=gsub("fld", "flood", replace))  %>% 
+            mutate(replace=gsub("wins", "winds", replace))  %>% 
+            mutate(replace=gsub("non-severe wind damage", "strong wind", replace))  %>% 
+            mutate(replace=gsub("rain", "heavy rain", replace))  %>% 
+            mutate(replace=gsub("snow", "heavy snow", replace))  %>% 
+            mutate(replace=gsub("lake-effect heavy snow", "lake-effect snow", replace))  %>% 
+            mutate(replace=gsub("low temperature", "cold", replace))  %>% 
+            mutate(replace=gsub("high tides", "coastal flood", replace))  %>% 
+            mutate(replace=gsub("heavy surf", "high surf", replace))  %>% 
+            mutate(replace=gsub("whirlwind", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("wind damage", "strong wind", replace))  %>% 
+            mutate(replace=gsub("^wind$", "strong wind", replace))  %>% 
+            mutate(replace=gsub("precip", "heavy rain", replace))  %>% 
+            mutate(replace=gsub("gustnado", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("heavy mix", "heavy rain", replace))  %>% 
+            mutate(replace=gsub("wind storm", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("(^|severe )thunderstorm($| damage to)", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("rough surf", "high surf", replace))  %>% 
+            mutate(replace=gsub("coastalstorm", "coastal storm", replace))  %>% 
+            mutate(replace=gsub("coastal storm", "thunderstorm wind", replace))  %>% 
+            mutate(replace=gsub("heavy swells", "high surf", replace))  %>% 
+            mutate(replace=gsub("swells", "surf", replace))  %>% 
+            mutate(replace=gsub("heavy seas", "high surf", replace))  %>% 
+            mutate(replace=gsub("high waves", "high surf", replace))  %>% 
+            mutate(replace=gsub("heavy shower", "heavy rain", replace))  %>% 
+            mutate(replace=gsub("rough seas", "high surf", replace))  %>% 
+            mutate(replace=gsub("rogue wave", "high surf", replace))  %>% 
+            mutate(replace=gsub("severe turbulence", "high surf", replace))  %>% 
+            mutate(replace=gsub("^winds$", "strong wind", replace))  %>% 
+            mutate(replace=gsub("freezing spray", "winter weather", replace))  %>% 
+            mutate(replace=gsub("gradient wind", "rip current", replace))  %>% 
+            mutate(replace=gsub("storm force winds", "strong wind", replace))  %>% 
+            mutate(replace=gsub("non-thunderstorm", "non thunderstorm", replace))  %>% 
+            mutate(replace=gsub("non thunderstorm wind", "strong wind", replace))
+
+
+# Event types that fail to match to NOAA event types are gathered under "other"
+evtypes$replace[!grepl(noaa_patterns, evtypes$replace)] = "other"
+
+data$EVTYPE <- evtypes$replace[match(data$EVTYPE, evtypes$EVTYPE)]
+
+```
+
+```{r correct_dmg}
+
+map <- data.frame(letter=c("b", "m", "k", "h", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"), 
+                  value =c( 9 ,  6 ,  3 ,  2 , 0:9))
+
+data$PROPDMGEXP <- map$value[match(tolower(data$PROPDMGEXP), map$letter)]
+data$CROPDMGEXP <- map$value[match(tolower(data$CROPDMGEXP), map$letter)]
+
+data <- data %>% mutate(REAL_PROPDMG = PROPDMG * 10^(PROPDMGEXP), .keep = "unused") %>%
+                 mutate(REAL_CROPDMG = CROPDMG * 10^(CROPDMGEXP), .keep = "unused")
+
+```
+
+Lastly, we will replace the *BGN_DATE* column by its year, dropping the information on month and day.
+
+```{r add_year}
+
+data <- mutate(data, YEAR=format(BGN_DATE, "%Y"), .keep = "unused")
+
 ```
 
 ```{r}
-data$EVTYPE <- sapply(data$EVTYPE, str_to_lower)
+results <- list(evtype=unique(data$EVTYPE), matches=regmatches(unique(data$EVTYPE), gregexec(noaa_patterns, unique(data$EVTYPE))))
+
+addition <- tibble(
+  YEAR = character(),
+  EVTYPE = character(),
+  FATALITIES = double(),
+  INJURIES = double(),
+  REAL_PROPDMG = double(),
+  REAL_CROPDMG = double())
+
+for(i in 1:nrow(data)){
+  matches <- results$matches[results$evtype == data$EVTYPE[i]][[1]][1,]
+  
+  number <- length(matches)
+  
+  common_divisor <- number
+  data$EVTYPE[i]       <- matches[1]
+  
+  if(number == 1){
+    next
+  }
+  
+  data$FATALITIES[i]   <- data$FATALITIES[i]   / common_divisor
+  data$INJURIES[i]     <- data$INJURIES[i]     / common_divisor
+  data$REAL_PROPDMG[i] <- data$REAL_PROPDMG[i] / common_divisor
+  data$REAL_CROPDMG[i] <- data$REAL_CROPDMG[i] / common_divisor
+  
+  number <- number - 1
+  
+  for(j in 1:number){
+    addition <- add_row(addition,
+                    EVTYPE = matches[1+j],
+                    FATALITIES = data$FATALITIES[i],
+                    INJURIES = data$INJURIES[i],
+                    REAL_PROPDMG = data$REAL_PROPDMG[i],
+                    REAL_CROPDMG = data$REAL_CROPDMG[i],
+                    YEAR = data$YEAR[i]
+           )
+  }
+}
+
+data <- rbind(data, addition)
+
 ```
 
 ## Explore the data
 
 ```{r, exploration, warning=FALSE}
-summary <- data %>% group_by(EVTYPE) %>% summarise(FATALITIES=sum(FATALITIES), INJURIES=sum(INJURIES), PROPDMG=sum(PROPDMG), CROPDMG=sum(CROPDMG))
-
-fatalities <- summary$FATALITIES
-injuries <- summary$INJURIES
-propdmg <- summary$PROPDMG
-cropdmg <- summary$CROPDMG
-
+summary <- data %>% group_by(EVTYPE, YEAR) %>% summarise(FATALITIES=sum(FATALITIES), INJURIES=sum(INJURIES), PROPDMG=sum(REAL_PROPDMG), CROPDMG=sum(REAL_CROPDMG))
 
 ```
-```{r}
-quantile(fatalities, probs = seq(0.85, 1, .01))
-```
-```{r}
-unique(data[data$FATALITIES>0,]$EVTYPE)
-```
-
-Astronomical Low Tide Z
-Avalanche Z
-Blizzard Z
-Coastal Flood Z
-Cold/Wind Chill Z
-Debris Flow C
-Dense Fog Z
-Dense Smoke Z
-Drought Z
-Dust Devil C
-Dust Storm Z
-Excessive Heat Z
-Extreme Cold/Wind Chill Z
-Flash Flood C
-Flood C
-Frost/Freeze Z
-Funnel Cloud C
-Freezing Fog Z
-Hail C
-Heat Z
-Heavy Rain C
-Heavy Snow Z
-High Surf Z
-High Wind Z
-Hurricane (Typhoon) Z
-Ice Storm Z
-Lake-Effect Snow Z
-Lakeshore Flood Z
-Lightning C
-Marine Hail M
-Marine High Wind M
-Marine Strong Wind M
-Marine Thunderstorm Wind M
-Rip Current Z
-Seiche Z
-Sleet Z
-Storm Surge/Tide Z
-Strong Wind Z
-Thunderstorm Wind C
-Tornado C
-Tropical Depression Z
-Tropical Storm Z
-Tsunami Z
-Volcanic Ash Z
-Waterspout M
-Wildfire Z
-Winter Storm Z
-Winter Weather Z
 
 ## Results
 
