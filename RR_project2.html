@@ -480,7 +480,18 @@ property damage, we select only the events where all four columns
 </div>
 <div id="tidying-the-data" class="section level3">
 <h3>Tidying the data</h3>
-<p>The first task is to clean the EVTYPE variable. Currently it contains
+<pre class="r"><code>map &lt;- data.frame(letter=c(&quot;b&quot;, &quot;m&quot;, &quot;k&quot;, &quot;h&quot;, &quot;0&quot;, &quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, &quot;5&quot;, &quot;6&quot;, &quot;7&quot;, &quot;8&quot;, &quot;9&quot;), 
+                  value =c( 9 ,  6 ,  3 ,  2 , 0:9))
+
+data$PROPDMGEXP &lt;- map$value[match(tolower(data$PROPDMGEXP), map$letter)]
+data$CROPDMGEXP &lt;- map$value[match(tolower(data$CROPDMGEXP), map$letter)]
+
+data &lt;- data %&gt;% mutate(REAL_PROPDMG = PROPDMG * 10^(PROPDMGEXP), .keep = &quot;unused&quot;) %&gt;%
+                 mutate(REAL_CROPDMG = CROPDMG * 10^(CROPDMGEXP), .keep = &quot;unused&quot;)</code></pre>
+<p>Next, we will replace the <em>BGN_DATE</em> column by its year,
+dropping the information on month and day.</p>
+<pre class="r"><code>data &lt;- mutate(data, YEAR=format(BGN_DATE, &quot;%Y&quot;), .keep = &quot;unused&quot;)</code></pre>
+<p>And lastly, we will clean the EVTYPE variable. Currently it contains
 485 different events.</p>
 <pre class="r"><code>n_distinct(unique(data$EVTYPE))</code></pre>
 <pre><code>## [1] 485</code></pre>
@@ -548,195 +559,173 @@ property damage, we select only the events where all four columns
 </div>
 </div>
 <p>The following code tries to gather the different event types under
-the event types defined by the NOAA. The variable <em>evtypes</em> will
-contain the original event types as well as an associated string. This
-string will contain the name of one or several NOAA event types, which
-will be used for the analysis. If no event type could be ascertained,
-the string will contain <em>“other”</em>.</p>
-<pre class="r"><code>NOAA_evtypes &lt;- c(&quot;Astronomical Low Tide&quot;, &quot;Avalanche&quot;, &quot;Blizzard&quot;, &quot;Coastal Flood&quot;, &quot;Cold&quot;, &quot;Wind Chill&quot;, &quot;Debris Flow&quot;, &quot;Dense Fog&quot;, &quot;Dense Smoke&quot;, &quot;Drought&quot;, &quot;Dust Devil&quot;, &quot;Dust Storm&quot;, &quot;Excessive Heat&quot;, &quot;Extreme Cold&quot;, &quot;Wind Chill&quot;, &quot;Flash Flood&quot;, &quot;Flood&quot;, &quot;Frost&quot;, &quot;Freeze&quot;, &quot;Funnel Cloud&quot;, &quot;Freezing Fog&quot;, &quot;Hail&quot;, &quot;Heat&quot;, &quot;Heavy Rain&quot;, &quot;Heavy Snow&quot;, &quot;High Surf&quot;, &quot;High Wind&quot;, &quot;Hurricane&quot;, &quot;Typhoon&quot;, &quot;Ice Storm&quot;, &quot;Lake-Effect Snow&quot;, &quot;Lakeshore Flood&quot;, &quot;Lightning&quot;, &quot;Marine Hail&quot;, &quot;Marine High Wind&quot;, &quot;Marine Strong Wind&quot;, &quot;Marine Thunderstorm Wind&quot;, &quot;Rip Current&quot;, &quot;Seiche&quot;, &quot;Sleet&quot;, &quot;Storm Surge&quot;, &quot;Storm Tide&quot;, &quot;Strong Wind&quot;, &quot;Thunderstorm Wind&quot;, &quot;Tornado&quot;, &quot;Tropical Depression&quot;, &quot;Tropical Storm&quot;, &quot;Tsunami&quot;, &quot;Volcanic Ash&quot;, &quot;Waterspout&quot;, &quot;Wildfire&quot;, &quot;Winter Storm&quot;, &quot;Winter Weather&quot;)
+the event types defined by the NOAA. The goal is to assign each of the
+original 485 to one or more NOAA events. The variable
+<em>evtypes_map</em> will map the original event types to a string that,
+when run over by a regex pattern, will find the corresponding NOAA
+events. If no event type could be ascertained, the event will be
+assigned to <em>“other”</em>.</p>
+<pre class="r"><code>evtypes_map &lt;-  setNames(as_tibble(unique(data$EVTYPE)), c(&quot;EVTYPE&quot;)) %&gt;% 
+                mutate(replace=tolower(EVTYPE))  %&gt;% 
+                mutate(replace=gsub(&quot;  &quot;, &quot; &quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;avalance&quot;, &quot;avalanche&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;cstl&quot;, &quot;coastal&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;astronomical high tide&quot;, &quot;coastal flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;coastal surge&quot;, &quot;coastal flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;high tides&quot;, &quot;coastal flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;coastalstorm&quot;, &quot;coastal storm&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;hypothermia&quot;, &quot;cold&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;low temperature&quot;, &quot;cold&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;land&quot;, &quot;debris flow&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;(mud|rock) *slide&quot;, &quot;debris flow&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;fog&quot;, &quot;dense fog&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;blowing dust&quot;, &quot;dust storm&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;flash(?! flood)&quot;, &quot;flash flood&quot;, replace, perl=TRUE)) %&gt;%
+                mutate(replace=gsub(&quot;dam break&quot;, &quot;flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;fld&quot;, &quot;flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;warm&quot;, &quot;heat&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;hyperthermia&quot;, &quot;heat&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;falling&quot;, &quot;heavy&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;hvy&quot;, &quot;heavy&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;rainfall&quot;, &quot;heavy rain&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;(?&lt;!heavy )rain&quot;, &quot;heavy rain&quot;, replace, perl=TRUE)) %&gt;%
+                mutate(replace=gsub(&quot;precip&quot;, &quot;heavy rain&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy mix&quot;, &quot;heavy rain&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy shower&quot;, &quot;heavy rain&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;excessive snow&quot;, &quot;heavy snow&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;(?&lt;!heavy )snow&quot;, &quot;heavy snow&quot;, replace, perl=TRUE)) %&gt;%
+                mutate(replace=gsub(&quot;gusty wind&quot;, &quot;heavy wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;hazardous&quot;, &quot;high&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy surf&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;rough surf&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy swells&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy seas&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;high waves&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;rough seas&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;rogue wave&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;severe turbulence&quot;, &quot;high surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;lake effect&quot;, &quot;lake-effect&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;lake-effect heavy snow&quot;, &quot;lake-effect snow&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;lake flood&quot;, &quot;lakeshore flood&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;ligh*n*tn*ing&quot;, &quot;lightning&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;mircoburst&quot;, &quot;microburst&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;non-thunderstorm&quot;, &quot;non thunderstorm&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;precipitation&quot;, &quot;rain&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;gradient wind&quot;, &quot;rip current&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;storm surge&quot;, &quot;storm tide&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;heavy wind&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;non-severe wind damage&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;wind damage&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;^wind$&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;^winds$&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;storm force winds&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;non thunderstorm wind&quot;, &quot;strong wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;swells&quot;, &quot;surf&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;tstm&quot;, &quot;thunderstorm&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;th*un*d*e+re*s*tr*or*ms*&quot;, &quot;thunderstorm&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;downburst&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;microburst&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;thunderstorm wi$&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;thunderstormw&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;whirlwind&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;gustnado&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;wind storm&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;(^|severe )thunderstorm($| damage to)&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;coastal storm&quot;, &quot;thunderstorm wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;torndao&quot;, &quot;tornado&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;fire&quot;, &quot;wildfire&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;windchill&quot;, &quot;wind chill&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;wins&quot;, &quot;wind&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;freezing drizzle&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;freezing rain&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;glaze&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;ice(?! storm)&quot;, &quot;winter weather&quot;, replace, perl=TRUE)) %&gt;%
+                mutate(replace=gsub(&quot;icy roads&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;light snow&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;wintry mix&quot;, &quot;winter weather&quot;, replace)) %&gt;%
+                mutate(replace=gsub(&quot;freezing spray&quot;, &quot;winter weather&quot;, replace))</code></pre>
+<pre class="r"><code>NOAA_evtypes &lt;- c(&quot;Astronomical Low Tide&quot;, &quot;Avalanche&quot;, &quot;Blizzard&quot;, &quot;Coastal Flood&quot;, 
+                  &quot;Cold&quot;, &quot;Wind Chill&quot;, &quot;Debris Flow&quot;, &quot;Dense Fog&quot;, &quot;Dense Smoke&quot;, 
+                  &quot;Drought&quot;, &quot;Dust Devil&quot;, &quot;Dust Storm&quot;, &quot;Excessive Heat&quot;, &quot;Extreme Cold&quot;,
+                  &quot;Wind Chill&quot;, &quot;Flash Flood&quot;, &quot;Flood&quot;, &quot;Frost&quot;, &quot;Freeze&quot;, &quot;Funnel Cloud&quot;, 
+                  &quot;Freezing Fog&quot;, &quot;Hail&quot;, &quot;Heat&quot;, &quot;Heavy Rain&quot;, &quot;Heavy Snow&quot;, &quot;High Surf&quot;, 
+                  &quot;High Wind&quot;, &quot;Hurricane&quot;, &quot;Typhoon&quot;, &quot;Ice Storm&quot;, &quot;Lake-Effect Snow&quot;, 
+                  &quot;Lakeshore Flood&quot;, &quot;Lightning&quot;, &quot;Marine Hail&quot;, &quot;Marine High Wind&quot;, 
+                  &quot;Marine Strong Wind&quot;, &quot;Marine Thunderstorm Wind&quot;, &quot;Rip Current&quot;,
+                  &quot;Seiche&quot;, &quot;Sleet&quot;, &quot;Storm Surge&quot;, &quot;Storm Tide&quot;, &quot;Strong Wind&quot;, 
+                  &quot;Thunderstorm Wind&quot;, &quot;Tornado&quot;, &quot;Tropical Depression&quot;, &quot;Tropical Storm&quot;,
+                  &quot;Tsunami&quot;, &quot;Volcanic Ash&quot;, &quot;Waterspout&quot;, &quot;Wildfire&quot;, &quot;Winter Storm&quot;,
+                  &quot;Winter Weather&quot;, &quot;Other&quot;)
 
 noaa_evtypes &lt;- tolower(NOAA_evtypes)
 noaa_patterns &lt;- paste0(&quot;(&quot;, paste(noaa_evtypes, collapse = &quot;|&quot;), &quot;)&quot;)
 
-evtypes &lt;-  setNames(as_tibble(unique(data$EVTYPE)), c(&quot;EVTYPE&quot;)) %&gt;% 
-            mutate(replace=tolower(EVTYPE))  %&gt;% 
-            mutate(replace=gsub(&quot;tstm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;torndao&quot;, &quot;tornado&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;warm&quot;, &quot;heat&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;astronomical high tide&quot;, &quot;coastal flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;avalance&quot;, &quot;avalanche&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;blowing dust&quot;, &quot;dust storm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;fire&quot;, &quot;wildfire&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;storm surge&quot;, &quot;storm tide&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;coastal surge&quot;, &quot;coastal flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;dam break&quot;, &quot;flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;downburst&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;mircoburst&quot;, &quot;microburst&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;microburst&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;cstl&quot;, &quot;coastal&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rainfall&quot;, &quot;heavy rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;excessive snow&quot;, &quot;heavy snow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;windchill&quot;, &quot;wind chill&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;falling&quot;, &quot;heavy&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;land&quot;, &quot;debris flow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunderstorm wi$&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;flash&quot;, &quot;flash flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;fog&quot;, &quot;dense fog&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;freezing drizzle&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;freezing rain&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;glaze&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;gusty wind&quot;, &quot;heavy wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;hvy&quot;, &quot;heavy&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;hazardous&quot;, &quot;high&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;precipitation&quot;, &quot;rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;ice($|/|[[:blank:]][^s].+([[:blank:]]|$))&quot;, &quot;winter weather &quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;hyperthermia&quot;, &quot;heat&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;hypothermia&quot;, &quot;cold&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;lake effect&quot;, &quot;lake-effect&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;icy roads&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;lake flood&quot;, &quot;lakeshore flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;light snow&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;lighting&quot;, &quot;lightning&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thundeerstorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunderstrom&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunerstorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;tunderstorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thundertorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thuderstorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunderestorm&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunderstormw&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy wind&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;mudslide&quot;, &quot;debris flow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;mud slide&quot;, &quot;debris flow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rock slide&quot;, &quot;debris flow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;wintry mix&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;ligntning&quot;, &quot;lightning&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;thunderstorms&quot;, &quot;thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;  &quot;, &quot; &quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;fld&quot;, &quot;flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;wins&quot;, &quot;winds&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;non-severe wind damage&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rain&quot;, &quot;heavy rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;snow&quot;, &quot;heavy snow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;lake-effect heavy snow&quot;, &quot;lake-effect snow&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;low temperature&quot;, &quot;cold&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;high tides&quot;, &quot;coastal flood&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy surf&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;whirlwind&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;wind damage&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;^wind$&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;precip&quot;, &quot;heavy rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;gustnado&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy mix&quot;, &quot;heavy rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;wind storm&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;(^|severe )thunderstorm($| damage to)&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rough surf&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;coastalstorm&quot;, &quot;coastal storm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;coastal storm&quot;, &quot;thunderstorm wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy swells&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;swells&quot;, &quot;surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy seas&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;high waves&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;heavy shower&quot;, &quot;heavy rain&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rough seas&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;rogue wave&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;severe turbulence&quot;, &quot;high surf&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;^winds$&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;freezing spray&quot;, &quot;winter weather&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;gradient wind&quot;, &quot;rip current&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;storm force winds&quot;, &quot;strong wind&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;non-thunderstorm&quot;, &quot;non thunderstorm&quot;, replace))  %&gt;% 
-            mutate(replace=gsub(&quot;non thunderstorm wind&quot;, &quot;strong wind&quot;, replace))
-
-
 # Event types that fail to match to NOAA event types are gathered under &quot;other&quot;
-evtypes$replace[!grepl(noaa_patterns, evtypes$replace)] = &quot;other&quot;
+evtypes_map$replace[!grepl(noaa_patterns, evtypes_map$replace)] = &quot;other&quot;
 
-data$EVTYPE &lt;- evtypes$replace[match(data$EVTYPE, evtypes$EVTYPE)]</code></pre>
-<pre class="r"><code>map &lt;- data.frame(letter=c(&quot;b&quot;, &quot;m&quot;, &quot;k&quot;, &quot;h&quot;, &quot;0&quot;, &quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, &quot;5&quot;, &quot;6&quot;, &quot;7&quot;, &quot;8&quot;, &quot;9&quot;), value=c(9,6,3,2, 0:9))
+data$EVTYPE &lt;- evtypes_map$replace[match(data$EVTYPE, evtypes_map$EVTYPE)]</code></pre>
+<p>Some of the original events appear to belong to multiple NOAA events,
+such as ICE STORM/FLASH FLOOD or HURRICANE OPAL/HIGH WINDS. To solve
+this issue, the original event will be divided into multiple parts and
+each will be assigned to a different individual NOAA event. This way the
+global impact of the event is preserved while also trying to keep all
+the original information.</p>
+<pre class="r"><code>results &lt;- list(evtype=unique(data$EVTYPE), 
+                matches=regmatches(unique(data$EVTYPE),
+                gregexec(noaa_patterns, unique(data$EVTYPE))))
 
-data$PROPDMGEXP &lt;- map$value[match(tolower(data$PROPDMGEXP), map$letter)]
-data$CROPDMGEXP &lt;- map$value[match(tolower(data$CROPDMGEXP), map$letter)]</code></pre>
-<pre class="r"><code>data$EVTYPE &lt;- sapply(data$EVTYPE, str_to_lower)</code></pre>
+addition &lt;- tibble(
+  YEAR = character(),
+  EVTYPE = character(),
+  FATALITIES = double(),
+  INJURIES = double(),
+  REAL_PROPDMG = double(),
+  REAL_CROPDMG = double())
+
+for(i in 1:nrow(data)){
+  matches &lt;- results$matches[results$evtype == data$EVTYPE[i]][[1]][1,]
+  
+  number &lt;- length(matches)
+  
+  common_divisor &lt;- number
+  data$EVTYPE[i]       &lt;- matches[1]
+  
+  if(number == 1){
+    next
+  }
+  
+  data$FATALITIES[i]   &lt;- data$FATALITIES[i]   / common_divisor
+  data$INJURIES[i]     &lt;- data$INJURIES[i]     / common_divisor
+  data$REAL_PROPDMG[i] &lt;- data$REAL_PROPDMG[i] / common_divisor
+  data$REAL_CROPDMG[i] &lt;- data$REAL_CROPDMG[i] / common_divisor
+  
+  number &lt;- number - 1
+  
+  for(j in 1:number){
+    addition &lt;- add_row(addition,
+                    EVTYPE = matches[1+j],
+                    FATALITIES = data$FATALITIES[i],
+                    INJURIES = data$INJURIES[i],
+                    REAL_PROPDMG = data$REAL_PROPDMG[i],
+                    REAL_CROPDMG = data$REAL_CROPDMG[i],
+                    YEAR = data$YEAR[i]
+           )
+  }
+}
+
+data &lt;- rbind(data, addition)</code></pre>
 </div>
 </div>
 <div id="explore-the-data" class="section level2">
 <h2>Explore the data</h2>
-<pre class="r"><code>summary &lt;- data %&gt;% group_by(EVTYPE) %&gt;% summarise(FATALITIES=sum(FATALITIES), INJURIES=sum(INJURIES), PROPDMG=sum(PROPDMG), CROPDMG=sum(CROPDMG))
-
-fatalities &lt;- summary$FATALITIES
-injuries &lt;- summary$INJURIES
-propdmg &lt;- summary$PROPDMG
-cropdmg &lt;- summary$CROPDMG</code></pre>
-<pre class="r"><code>quantile(fatalities, probs = seq(0.85, 1, .01))</code></pre>
-<pre><code>##     85%     86%     87%     88%     89%     90%     91%     92%     93%     94% 
-##   13.75   15.20   17.45   19.00   28.00   34.00   45.40   61.20   70.50   95.90 
-##     95%     96%     97%     98%     99%    100% 
-##  125.50  148.80  205.90  398.60  894.65 5633.00</code></pre>
-<pre class="r"><code>unique(data[data$FATALITIES&gt;0,]$EVTYPE)</code></pre>
-<pre><code>##   [1] &quot;tornado&quot;                            &quot;thunderstorm wind&quot;                 
-##   [3] &quot;hail&quot;                               &quot;winter storm&quot;                      
-##   [5] &quot;hurricane opal/high winds&quot;          &quot;dense dense fog&quot;                   
-##   [7] &quot;rip current&quot;                        &quot;heat&quot;                              
-##   [9] &quot;lightning&quot;                          &quot;cold&quot;                              
-##  [11] &quot;flooding&quot;                           &quot;heavy heavy rain&quot;                  
-##  [13] &quot;flash flood flood&quot;                  &quot;extreme cold&quot;                      
-##  [15] &quot;thunderstorm winds&quot;                 &quot;other&quot;                             
-##  [17] &quot;high wind/seas&quot;                     &quot;dust storm&quot;                        
-##  [19] &quot;sleet&quot;                              &quot;flood&quot;                             
-##  [21] &quot;excessive heat&quot;                     &quot;strong winds&quot;                      
-##  [23] &quot;high winds&quot;                         &quot;high surf&quot;                         
-##  [25] &quot;wild wildfires&quot;                     &quot;winter storm high winds&quot;           
-##  [27] &quot;winter storms&quot;                      &quot;flood/flash flood flood&quot;           
-##  [29] &quot;heavy heavy snow&quot;                   &quot;ice storm&quot;                         
-##  [31] &quot;heat wave&quot;                          &quot;unseasonably heat&quot;                 
-##  [33] &quot;hurricane erin&quot;                     &quot;strong wind&quot;                       
-##  [35] &quot;hurricane opal&quot;                     &quot;tornadoes, thunderstorm wind, hail&quot;
-##  [37] &quot;tropical storm gordon&quot;              &quot;waterspout&quot;                        
-##  [39] &quot;storm tide&quot;                         &quot;blizzard&quot;                          
-##  [41] &quot;winter weather/heavy snow&quot;          &quot;thunderheavy snow&quot;                 
-##  [43] &quot;high wind&quot;                          &quot;flash flood flooding&quot;              
-##  [45] &quot;winter weather&quot;                     &quot;dense fog&quot;                         
-##  [47] &quot;heavy snow and winter weather &quot;     &quot;winter weather &quot;                   
-##  [49] &quot;urban and small stream floodin&quot;     &quot;waterspout/tornado&quot;                
-##  [51] &quot;extreme heat&quot;                       &quot;freeze&quot;                            
-##  [53] &quot;lightning.&quot;                         &quot;cold wave&quot;                         
-##  [55] &quot;flood/river flood&quot;                  &quot;river flood&quot;                       
-##  [57] &quot;avalanche&quot;                          &quot;heavy heavy snow and high winds&quot;   
-##  [59] &quot;rip currents/high surf&quot;             &quot;dense fog and cold temperatures&quot;   
-##  [61] &quot;heavy snow&quot;                         &quot;rip currents&quot;                      
-##  [63] &quot;hurricane felix&quot;                    &quot;blowing heavy snow&quot;                
-##  [65] &quot;heavy rain/wind&quot;                    &quot;heat wave drought&quot;                 
-##  [67] &quot;heat waves&quot;                         &quot;unseasonably heat and dry&quot;         
-##  [69] &quot;unseasonably cold&quot;                  &quot;record/excessive heat&quot;             
-##  [71] &quot;thunderstorm wind g52&quot;              &quot;cold/winds&quot;                        
-##  [73] &quot;record cold&quot;                        &quot;heavy snow/ bitter cold&quot;           
-##  [75] &quot;cold weather&quot;                       &quot;high winds/heavy snow&quot;             
-##  [77] &quot;flash flood flood/flood&quot;            &quot;excessive heavy heavy rain&quot;        
-##  [79] &quot;flash flood flooding/flood&quot;         &quot;debris flowslide&quot;                  
-##  [81] &quot;high wind and seas&quot;                 &quot;river flooding&quot;                    
-##  [83] &quot;minor flooding&quot;                     &quot;drought/excessive heat&quot;            
-##  [85] &quot;flood &amp; heavy heavy rain&quot;           &quot;flash flood floods&quot;                
-##  [87] &quot;tropical storm&quot;                     &quot;urban/sml stream flood&quot;            
-##  [89] &quot;dry thunderstorm wind&quot;              &quot;hurricane&quot;                         
-##  [91] &quot;extended cold&quot;                      &quot;extreme wind chill&quot;                
-##  [93] &quot;mixed heavy rain&quot;                   &quot;debris flows&quot;                      
-##  [95] &quot;cold temperature&quot;                   &quot;coastal flooding&quot;                  
-##  [97] &quot;cold and heavy snow&quot;                &quot;heavy rain/heavy snow&quot;             
-##  [99] &quot;cold/exposure&quot;                      &quot;black winter weather &quot;             
-## [101] &quot;frost&quot;                              &quot;wild/forest wildfire&quot;              
-## [103] &quot;heavy snow squalls&quot;                 &quot;debris flow&quot;                       
-## [105] &quot;high surf and wind&quot;                 &quot;debris flowslides&quot;                 
-## [107] &quot;thunderstorm wind/hail&quot;             &quot;thunderstorm wind (g35)&quot;           
-## [109] &quot;heavy snow squall&quot;                  &quot;heat/exposure&quot;                     
-## [111] &quot;record heat&quot;                        &quot;thunderstorm wind (g40)&quot;           
-## [113] &quot;heavy heavy snow/winter weather &quot;   &quot;extreme cold/wind chill&quot;           
-## [115] &quot;hurricane/typhoon&quot;                  &quot;wildwildfire&quot;                      
-## [117] &quot;high surf/high surf&quot;                &quot;winter weather/mix&quot;                
-## [119] &quot;dust devil&quot;                         &quot;marine thunderstorm wind&quot;          
-## [121] &quot;cold/wind chill&quot;                    &quot;marine strong wind&quot;                
-## [123] &quot;coastal flood&quot;                      &quot;storm tide/tide&quot;                   
-## [125] &quot;marine high wind&quot;                   &quot;tsunami&quot;</code></pre>
+<pre class="r"><code>summary &lt;- data %&gt;% 
+           group_by(EVTYPE, YEAR) %&gt;% 
+           summarise(FATALITIES=sum(FATALITIES), 
+                     INJURIES=sum(INJURIES), 
+                     PROPDMG=sum(REAL_PROPDMG), 
+                     CROPDMG=sum(REAL_CROPDMG))</code></pre>
+<pre><code>## `summarise()` has grouped output by &#39;EVTYPE&#39;. You can override using the
+## `.groups` argument.</code></pre>
 </div>
 <div id="results" class="section level2">
 <h2>Results</h2>
