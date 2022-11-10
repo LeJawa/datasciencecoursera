@@ -361,7 +361,7 @@ summary_per_year <- data %>%
 
 
 ```{r}
-summary <- summary_per_year %>%
+summary_sum <- summary_per_year %>%
            group_by(EVTYPE) %>%
            summarise(FATALITIES=sum(FATALITIES, na.rm = TRUE), 
                      INJURIES=sum(INJURIES, na.rm = TRUE), 
@@ -380,12 +380,12 @@ summary_mean <- summary_per_year %>%
 summary2 <- summary %>% 
             pivot_longer(2:3, values_to = "quantity", names_to = "health_type") %>% 
             pivot_longer(2:3, values_to = "amount", names_to = "damage_type") %>%
-            arrange(quantity, amount)
+            arrange(desc(quantity), amount)
 
 summary_mean2 <- summary_mean %>% 
                  pivot_longer(2:3, values_to = "quantity", names_to = "health_type") %>% 
                  pivot_longer(2:3, values_to = "amount", names_to = "damage_type") %>%
-                 arrange(quantity, amount)
+                 arrange(desc(quantity), amount)
 
 
 ```
