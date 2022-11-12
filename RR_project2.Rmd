@@ -1,12 +1,13 @@
 ---
 title: "Analysis on severe weather events in the USA"
 author: "Luis Escobar Sawa"
-date: "27/10/2022"
+date: "November 12, 2022"
 output:
   html_document:
   pdf_document:
-subtitle: 'Reproducible Research: Peer-graded Assignment 2'
-company: 'John Hopkins University'
+subtitle: |
+  | Reproducible Research: Peer-graded Assignment 2
+  | Johns Hopkins University
 ---
 
 ```{r setup, include=FALSE}
@@ -22,14 +23,17 @@ The goal of this study will be to try to address the following questions:
 
 We will use the storm database provided by the U.S. National Oceanic and Atmospheric Administration's (NOAA). This database reports estimates of any fatalities, injuries, and property damage caused by major storms and weather events.
 
+We will see that Tornadoes are the events most harmful to population health, whereas Floods are the cause of most economic harm.
+
 ## Data Processing
 
 ### Extracting the data
 
-We are going to use the tidyverse library which is a collection of useful libraries like, dplyr, tibble, ggplot2 and readr, among others.
+We are going to use the *tidyverse* library which is a collection of useful libraries like, dplyr, tibble, ggplot2 and readr, among others. *gridExtra* will be used for ease of plotting.
 
 ```{r libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
+library(gridExtra)
 ```
 
 First we download the database if not already present in the repository.
@@ -90,7 +94,7 @@ First, we will replace the *BGN_DATE* column by its year, dropping the informati
 
 ```{r add_year}
 
-data <- mutate(data, YEAR=format(BGN_DATE, "%Y"), .keep = "unused")
+data <- mutate(data, YEAR=as.numeric(format(BGN_DATE, "%Y")), .keep = "unused")
 
 ```
 
@@ -300,7 +304,7 @@ results <- list(evtype=unique(data$EVTYPE),
                 gregexec(noaa_patterns, unique(data$EVTYPE))))
 
 addition <- tibble(
-  YEAR = character(),
+  YEAR = numeric(),
   EVTYPE = character(),
   FATALITIES = double(),
   INJURIES = double(),
@@ -342,76 +346,130 @@ data <- rbind(data, addition)
 
 ```
 
-## Explore the data
+We are interested in total damage per event type and therefore a sum over all the observations per event type is required. However, we notice that the earlier years (1950s to 1980s) contain almost exclusively tornado events. Other events were not recorded.
 
-We are interested in total damage per event type and therefore a sum over all the observations per event type is required. However, we notice that the earlier years (1950s to 1980s) contain almost exclusively tornado events.
-In order to investigate and later mitigate it, we will do the summation over event types as well as years.
+In order to mitigate this phenomenon, we will average the impact of each event by the number of years since its first occurrence. The running assumption is that once an event has been recorded once, it will keep being recorded in the future. If it is missing from a subsequent year, it is no longer a lack of recording but a lack of actual event.
 
-```{r sum_over_years, warning=FALSE}
+```{r sum_over_years, warning=FALSE, message=FALSE}
 summary_per_year <- data %>% 
                     group_by(EVTYPE, YEAR) %>% 
                     summarise(FATALITIES=sum(FATALITIES, na.rm = TRUE), 
                               INJURIES=sum(INJURIES, na.rm = TRUE), 
-                              PROPDMG=sum(REAL_PROPDMG, na.rm = TRUE), 
-                              CROPDMG=sum(REAL_CROPDMG, na.rm = TRUE))
+                              PROPDMG=sum(REAL_PROPDMG, na.rm = TRUE)/1e6, 
+                              CROPDMG=sum(REAL_CROPDMG, na.rm = TRUE)/1e6)
 
 ```
 
-
-
-
-```{r}
-summary_sum <- summary_per_year %>%
-           group_by(EVTYPE) %>%
-           summarise(FATALITIES=sum(FATALITIES, na.rm = TRUE), 
-                     INJURIES=sum(INJURIES, na.rm = TRUE), 
-                     PROPDMG=sum(PROPDMG, na.rm = TRUE), 
-                     CROPDMG=sum(CROPDMG, na.rm = TRUE))
-
-
+```{r summarising_data, warning=FALSE}
 summary_mean <- summary_per_year %>%
                 group_by(EVTYPE) %>%
-                summarise(FATALITIES=mean(FATALITIES, na.rm = TRUE), 
-                          INJURIES=mean(INJURIES, na.rm = TRUE), 
-                          PROPDMG=mean(PROPDMG, na.rm = TRUE), 
-                          CROPDMG=mean(CROPDMG, na.rm = TRUE))
+                summarise(FATALITIES=sum(FATALITIES, na.rm = TRUE)/(2012-min(YEAR)), 
+                          INJURIES=sum(INJURIES, na.rm = TRUE)/(2012-min(YEAR)), 
+                          PROPDMG=sum(PROPDMG, na.rm = TRUE)/(2012-min(YEAR)), 
+                          CROPDMG=sum(CROPDMG, na.rm = TRUE)/(2012-min(YEAR)))
+
+summary_order <- summary_mean %>%
+                 group_by(EVTYPE) %>% 
+                 summarise(HEALTH=FATALITIES+INJURIES,
+                           ECONOMY=PROPDMG+CROPDMG)
+
+summary_health <- summary_mean %>% 
+                  pivot_longer(2:3, values_to = "quantity", names_to = "health_type") %>% 
+                  select(-c("PROPDMG", "CROPDMG"))
+  
+
+summary_economy <- summary_mean %>%
+                   pivot_longer(4:5, values_to = "amount", names_to = "damage_type") %>%
+                   select(-c("FATALITIES", "INJURIES"))
 
 
-summary2 <- summary %>% 
-            pivot_longer(2:3, values_to = "quantity", names_to = "health_type") %>% 
-            pivot_longer(2:3, values_to = "amount", names_to = "damage_type") %>%
-            arrange(desc(quantity), amount)
+```
 
-summary_mean2 <- summary_mean %>% 
-                 pivot_longer(2:3, values_to = "quantity", names_to = "health_type") %>% 
-                 pivot_longer(2:3, values_to = "amount", names_to = "damage_type") %>%
-                 arrange(desc(quantity), amount)
+## Exploratory Data Analysis
 
+Let us have a look at how the data is distributed:
+
+```{r}
+summary(summary_order)
+```
+
+We can see that the maximum value for HEALTH and ECONOMY is very far from the median, but also from the third quartile.
+
+The plots below show the distribution of all the event types. We see what was inferred from the summary, which is that the most impactful event types have values several orders of magnitude above the others.
+
+
+```{r}
+bplot1 <- ggplot(data = summary_order, aes(x="HEALTH", y=HEALTH/max(HEALTH)))  + geom_boxplot() +
+  geom_jitter(position=position_jitter(0.3)) + theme_bw() + 
+  labs(title="",
+       x = "",
+       y = "")
+bplot2 <- ggplot(data = summary_order, aes(x="ECONOMY", y=ECONOMY/max(ECONOMY)))  + geom_boxplot() +
+  geom_jitter(position=position_jitter(0.3)) + theme_bw() + 
+  labs(title="",
+       x = "",
+       y = "")
 
 ```
 
 ```{r}
-
-ggplot(data=summary2, aes(x=reorder(EVTYPE, -quantity), y=quantity, fill=health_type)) + 
-  geom_bar(stat = "identity") +
-  theme_bw()
-
+grid.arrange(bplot1, bplot2, ncol=2, name="test")
 
 ```
 
-```{r}
-ggplot(data=summary_mean2, aes(x=reorder(EVTYPE, -quantity), y=quantity, fill=health_type)) + 
-  geom_bar(stat = "identity") +
-  theme_bw()
-```
-
+For this reason, we will only look into the last quartile in each category, which corresponds to twelve event types.
 
 ## Results
 
-You can also embed plots, for example:
+```{r palette_def}
+# Color palette for plots
+cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
 
-```{r pressure, echo=FALSE}
+### Impact on population health
+
+We can clearly see that the most harmful events to population health are Tornadoes with more than three times the impact of the second most harmful event type.
+
+
+```{r health_plot, warning=FALSE}
+ggplot(data=summary_health, aes(x=reorder(EVTYPE, -quantity), y=quantity, fill=health_type)) + 
+  geom_bar(stat = "identity") +
+  scale_x_discrete(limits=arrange(summary_order,desc(HEALTH))$EVTYPE[1:12]) + 
+  labs(title="Impact of different weather events on population health",
+       subtitle = "Twelve most harmful event types",
+       x = "Event type",
+       y = "Yearly fatalities + injuries") +
+  scale_fill_manual(values = cbPalette,
+                    name="",
+                    labels=c("Fatalities", "Injuries")) +
+  geom_text(aes(EVTYPE, HEALTH + 65, label=as.integer(HEALTH), fill=NULL), data=summary_order) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=90, vjust = 0.5, hjust=1))
 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Impact on the economy
+
+The most impactful events to the economy are floods with more than 8 488 millions USD of total damages each year.
+
+```{r economy_plot, warning=FALSE}
+ggplot(data=summary_economy, aes(x=reorder(EVTYPE, -amount), y=amount, fill=damage_type)) + 
+  geom_bar(stat = "identity") +
+  scale_x_discrete(limits=arrange(summary_order,desc(ECONOMY))$EVTYPE[1:12]) + 
+  labs(title="Impact of different weather events on the economy",
+       subtitle = "Twelve most harmful event types",
+       x = "Event type",
+       y = "Yearly damages in million of USD") +
+  scale_fill_manual(values = cbPalette,
+                    name="",
+                    labels=c("Crops", "Property")) +
+  geom_text(aes(EVTYPE, ECONOMY + 400, label=round(ECONOMY,0), fill=NULL), data=summary_order) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=90, vjust = 0.5, hjust=1))
+
+```
+
+
+
+
+
